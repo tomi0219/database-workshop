@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ESP32 Firebase Dashboard</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 700px;
+            margin: 30px auto;
+            padding: 20px;
+            background: #f4f4f4;
+            color: #222;
+        }
+
+        .card {
+            background: #fff;
+            border: 1px solid #ddd;
+            border-radius: 10px;
+            padding: 18px;
+            margin-bottom: 18px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+        }
+
+        h1 { text-align: center; color: #333; margin-bottom: 5px; }
+        
+        .status {
+            font-weight: bold;
+            text-align: center;
+            margin-bottom: 20px;
+            color: green;
+        }
+
+        h2 { margin-top: 0; color: #444; font-size: 1.2rem; margin-bottom: 15px; }
+
+        input[type="range"] {
+            width: 100%;
+            cursor: pointer;
+            height: 8px;
+            background: #ddd;
+            border-radius: 5px;
+            outline: none;
+        }
+
+        #messages {
+            height: 180px;
+            overflow-y: auto;
+            border: 1px solid #ccc;
+            padding: 15px;
+            background: #fff;
+            white-space: pre-wrap;
+            font-family: Arial, sans-serif;
+            font-size: 0.95rem;
+            border-radius: 5px;
+            color: #444;
+            margin-bottom: 15px;
+        }
+
+        .input-row {
+            display: flex;
+            gap: 10px;
+        }
+
+        input[type="text"] {
+            flex: 1;
+            padding: 10px;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            outline: none;
+        }
+
+        button {
+            padding: 10px 25px;
+            cursor: pointer;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            font-weight: bold;
+        }
+
+        span.value { color: #007bff; font-weight: bold; }
+        span.detected { color: red; font-weight: bold; }
+    </style>
+</head>
+<body>
+
+    <h1>ESP32 Firebase Dashboard</h1>
+    <p class="status" id="status">Connected to Cloud</p>
+
+    <div class="card">
+        <h2>Servo Control</h2>
+        <p>Angle: <span class="value" id="angleValue">90</span>°</p>
+        <input id="angleSlider" type="range" min="0" max="180" value="90">
+        <p style="margin-top: 20px;">ESP32 Status angle: <span class="value" id="servoAngle">90</span>°</p>
+    </div>
+
+    <div class="card">
+        <h2>IR Sensor</h2>
+        <p>Detected: <span id="irDetected" class="detected">NO</span></p>
+        <p>Raw: <span class="value" id="irRaw">0</span></p>
+    </div>
+
+    <div class="card">
+        <h2>Messages</h2>
+        <div id="messages">No messages yet.</div>
+        <div class="input-row">
+            <input id="msgInput" type="text" placeholder="Type a message">
+            <button id="sendBtn">Send</button>
+        </div>
+    </div>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+        import { getDatabase, ref, onValue, set } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
+
+        // --- Firebase Config ---
+        const firebaseConfig = {
+            apiKey: "AIzaSyCANnCH1UZSUmpnREvUBUuWljsXUVPncd4",
+            authDomain: "databaseprogramming-8bd17.firebaseapp.com",
+            databaseURL: "https://databaseprogramming-8bd17-default-rtdb.firebaseio.com",
+            projectId: "databaseprogramming-8bd17",
+            storageBucket: "databaseprogramming-8bd17.firebasestorage.app",
+            messagingSenderId: "50050856683",
+            appId: "1:50050856683:web:d5dc3b27f81e04b4c830ae"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getDatabase(app);
+
+        // --- DOM ---
+        const statusEl = document.getElementById("status");
+        const angleSlider = document.getElementById("angleSlider");
+        const angleValue = document.getElementById("angleValue");
+        const servoAngle = document.getElementById("servoAngle");
+        const irDetected = document.getElementById("irDetected");
+        const irRaw = document.getElementById("irRaw");
+        const messages = document.getElementById("messages");
+        const msgInput = document.getElementById("msgInput");
+        const sendBtn = document.getElementById("sendBtn");
+
+        let lastEspMsg = "";
+
+        // --- Functions ---
+        function addMessage(text, source) {
+            if (messages.textContent === "No messages yet.") messages.textContent = "";
+            messages.textContent += `[${source}] ${text}\n`;
+            messages.scrollTop = messages.scrollHeight;
+        }
+
+        angleSlider.addEventListener("input", () => {
+            const angle = parseInt(angleSlider.value);
+            angleValue.textContent = angle;
+            set(ref(db, "servo/msgTitle"), angle);
+        });
+
+        sendBtn.onclick = () => {
+            const val = msgInput.value.trim();
+            if(!val) return;
+            addMessage(val, "Web");
+            set(ref(db, "serial/message"), { text: val, source: "web" });
+            msgInput.value = "";
+        };
+
+        // --- Firebase Handlers ---
+        signInAnonymously(auth);
+
+        onAuthStateChanged(auth, (user) => {
+            if (user) {
+                statusEl.textContent = "Connected to Cloud";
+                
+                // Servo Listener
+                onValue(ref(db, "servo/msgTitle"), (snap) => {
+                    const val = snap.val();
+                    if (val === null) return;
+                    servoAngle.textContent = val;
+                    angleSlider.value = val;
+                    angleValue.textContent = val;
+                });
+
+                // IR Listener
+                onValue(ref(db, "ir"), (snap) => {
+                    const data = snap.val();
+                    if (!data) return;
+                    irRaw.textContent = data.raw ?? "0";
+                    irDetected.textContent = data.detected ? "YES" : "NO";
+                    irDetected.style.color = data.detected ? "red" : "green";
+                });
+
+                // Message Listener
+                onValue(ref(db, "serial/message"), (snap) => {
+                    const data = snap.val();
+                    if (data && data.source === "esp32" && data.text !== lastEspMsg) {
+                        lastEspMsg = data.text;
+                        addMessage(data.text, "ESP32");
+                    }
+                });
+            }
+        });
+    </script>
+</body>
+</html>
