@@ -182,13 +182,17 @@
                 });
 
                 // IR Listener
-                onValue(ref(db, "ir"), (snap) => {
-                    const data = snap.val();
-                    if (!data) return;
-                    irRaw.textContent = data.raw ?? "0";
-                    irDetected.textContent = data.detected ? "YES" : "NO";
-                    irDetected.style.color = data.detected ? "red" : "green";
-                });
+              onValue(ref(db, "sensor/obstacle"), (snap) => {
+    const val = snap.val(); // This will be 0 or 1
+    if (val === null) return;
+
+    // In most IR sensors, 0 = Object Detected, 1 = Clear
+    const isDetected = (val === 0); 
+    
+    irRaw.textContent = val;
+    irDetected.textContent = isDetected ? "YES" : "NO";
+    irDetected.style.color = isDetected ? "red" : "green";
+});
 
                 // Message Listener
                 onValue(ref(db, "serial/message"), (snap) => {
